@@ -1,0 +1,33 @@
+{
+  "asset": "BTC",
+  "interval_seconds": 60,
+  "bankroll": 1000.0,
+  "horizons": ["1h"],
+  "max_alerts_per_cycle": 2,
+  "cooldown_minutes": 15,
+  "record_signals": true,
+  "state_file": "data/tracking/bot_state.json",
+  "filters": {
+    "min_abs_edge": 0.04,
+    "min_blended_confidence": 0.10,
+    "min_agreement_score": 0.05,
+    "min_yes_ask": 0.05,
+    "max_yes_ask": 0.95,
+    "max_spread": 0.25,
+    "min_contract_volume": 0,
+    "min_open_interest": 0,
+    "min_total_event_volume": 0
+  },
+  "notify": {
+    "console": true,
+    "telegram": {
+      "enabled": false,
+      "bot_token_env": "TELEGRAM_BOT_TOKEN",
+      "chat_id_env": "TELEGRAM_CHAT_ID"
+    },
+    "webhook": {
+      "enabled": false,
+      "url_env": "SYNTHEDGE_WEBHOOK_URL"
+    }
+  }
+}

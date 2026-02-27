@@ -59,10 +59,31 @@ pip install -r requirements.txt
 
 The dashboard runs at `http://localhost:8503`.
 
+## Alert Bot Mode
+
+Run the alert-first bot (filtered high-quality opportunities only):
+
+```bash
+export SYNTHDATA_API_KEY="your_key_here"
+./run_synthedge_bot.sh
+```
+
+Quick dry run (single cycle):
+
+```bash
+python src/bot.py --config configs/bot.json --once
+```
+
+Generate a daily report from tracked signals/settlements:
+
+```bash
+python src/daily_report.py --date 2026-02-27
+```
+
 ## Requirements
 
 - Python 3.11+
-- SynthData API key (set `SYNTHDATA_API_KEY` env var, or use the default in `run_synthedge.sh`)
+- SynthData API key (`SYNTHDATA_API_KEY` environment variable)
 - Kalshi API access (optional, for live market pricing)
 
 Key packages: `streamlit`, `xgboost`, `lightgbm`, `catboost`, `plotly`, `pandas`, `requests`
@@ -82,6 +103,8 @@ python src/train_v2.py --coin eth
 ```
 src/
   dashboard_v2.py      # Streamlit dashboard (main entry point)
+  bot.py               # Alert-first scanning bot loop
+  daily_report.py      # Daily performance report generator
   synthdata_client.py   # SynthData API wrapper with caching
   signal_blender.py     # Agreement-boosted probability fusion
   edge_detector.py      # Model vs market edge scanning
@@ -94,6 +117,7 @@ src/
   train_v2.py           # Model training with walk-forward CV
 
 configs/                # Model hyperparameters
+configs/bot.json        # Alert bot filters, cooldowns, notifier settings
 models/                 # Pre-trained model files (.joblib)
 data/                   # Raw data, SynthData cache, signal logs
 ```

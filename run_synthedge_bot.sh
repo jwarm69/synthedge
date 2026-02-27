@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# SynthEdge Dashboard Launcher
-# Activates .venv (which has xgboost, lightgbm, catboost, joblib)
-# so the local ensemble loads correctly.
+# SynthEdge Alert Bot launcher.
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -19,10 +17,11 @@ if [ -z "${SYNTHDATA_API_KEY:-}" ]; then
     exit 1
 fi
 
-echo "=== SynthEdge Dashboard ==="
+CONFIG_PATH="${1:-configs/bot.json}"
+
+echo "=== SynthEdge Alert Bot ==="
 echo "Python: $(which python)"
-echo "Streamlit: $(which streamlit)"
-echo "Port: 8503"
+echo "Config: ${CONFIG_PATH}"
 echo ""
 
-exec streamlit run src/dashboard_v2.py --server.port 8503
+exec python src/bot.py --config "${CONFIG_PATH}"
