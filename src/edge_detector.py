@@ -347,7 +347,7 @@ def scan_all_edges(
     result["current_price"] = current_price
 
     # 4. Scan each horizon
-    for hz in ("1h", "15min"):
+    for hz in ("1h", "15min", "5min"):
         hz_result = {
             "blended_signal": None,
             "opportunities": [],
@@ -363,9 +363,9 @@ def scan_all_edges(
         if hz == "1h" and ensemble_result:
             ens_prob_up = ensemble_result.get("calibrated_prob_up", 0.5)
             blended = blend_predictions(synth_prob_up, ens_prob_up, horizon="1h")
-        elif hz == "15min":
+        elif hz in ("15min", "5min"):
             ens_dir = ensemble_result.get("direction") if ensemble_result else None
-            blended = blend_synthdata_only(synth_prob_up, ens_dir, horizon="15min")
+            blended = blend_synthdata_only(synth_prob_up, ens_dir, horizon=hz)
         else:
             # No ensemble, use SynthData at full weight
             blended = blend_predictions(synth_prob_up, 0.5, horizon="1h")
@@ -397,8 +397,12 @@ def scan_all_edges(
     # Set overall status
     has_1h = bool(result.get("1h", {}).get("blended_signal"))
     has_15m = bool(result.get("15min", {}).get("blended_signal"))
-    if has_1h or has_15m:
-        result["status"] = "ok" if has_1h and has_15m else "partial"
+    has_5m = bool(result.get("5min", {}).get("blended_signal"))
+    ok_count = sum([has_1h, has_15m, has_5m])
+    if ok_count == 3:
+        result["status"] = "ok"
+    elif ok_count > 0:
+        result["status"] = "partial"
 
     return result
 
@@ -413,7 +417,7 @@ if __name__ == "__main__":
     print(f"SynthData: {edges['synthdata_status']}")
     print(f"Ensemble: {edges['ensemble_status']}")
 
-    for hz in ("1h", "15min"):
+    for hz in ("1h", "15min", "5min"):
         hz_data = edges.get(hz, {})
         blended = hz_data.get("blended_signal")
         opps = hz_data.get("opportunities", [])

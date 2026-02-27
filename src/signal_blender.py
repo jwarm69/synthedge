@@ -32,6 +32,10 @@ WEIGHT_ENSEMBLE_1H = 0.55
 WEIGHT_SYNTHDATA_15MIN = 0.80
 WEIGHT_ENSEMBLE_CONTEXT_15MIN = 0.20
 
+# For 5min (SynthData dominant, ensemble is weak context only)
+WEIGHT_SYNTHDATA_5MIN = 0.90
+WEIGHT_ENSEMBLE_CONTEXT_5MIN = 0.10
+
 # Agreement boost parameters
 MAX_AGREEMENT_BOOST = 0.15
 AGREEMENT_STRENGTH_THRESHOLD = 0.55  # both must exceed this for boost
@@ -66,7 +70,10 @@ def blend_predictions(
             "method": str,
         }
     """
-    if horizon in ("15min", "15m"):
+    if horizon in ("5min", "5m"):
+        w_synth = WEIGHT_SYNTHDATA_5MIN
+        w_ens = WEIGHT_ENSEMBLE_CONTEXT_5MIN
+    elif horizon in ("15min", "15m"):
         w_synth = WEIGHT_SYNTHDATA_15MIN
         w_ens = WEIGHT_ENSEMBLE_CONTEXT_15MIN
     else:

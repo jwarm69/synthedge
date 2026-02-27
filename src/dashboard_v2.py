@@ -1,12 +1,13 @@
 """
 SynthEdge Dashboard v2 - Hackathon demo for SynthData x Kalshi BTC trading.
 
-5-tab Streamlit dashboard:
-1. Live Edge Scanner (hero) - with Polymarket 3-way comparison
+6-tab Streamlit dashboard:
+1. Live Edge Scanner (hero) - with Polymarket 3-way comparison + 5min horizon
 2. Signal Breakdown
 3. Price Distribution
-4. P&L Tracker + Paper Trading
-5. Model Comparison
+4. P&L Tracker + Paper Trading + Backtest Simulator
+5. Model Comparison + Source Performance Comparison
+6. Network Intelligence (Bittensor Leaderboard + Consensus)
 """
 
 import streamlit as st
@@ -89,6 +90,9 @@ try:
         get_price_percentiles,
         get_volatility_forecast,
         get_all_signals,
+        get_leaderboard,
+        get_meta_leaderboard,
+        get_validation_scores,
     )
     HAS_SYNTHDATA = True
 except ImportError:
@@ -119,10 +123,17 @@ try:
         get_settled_history,
         evaluate_settled,
         record_signal,
+        get_source_comparison,
     )
     HAS_PNL = True
 except ImportError:
     HAS_PNL = False
+
+try:
+    from backtester import run_backtest
+    HAS_BACKTESTER = True
+except ImportError:
+    HAS_BACKTESTER = False
 
 try:
     from predict_v2 import predict_with_threshold, DEFAULT_CALIBRATION
@@ -192,6 +203,36 @@ def cached_performance_summary():
         return get_performance_summary()
     except Exception:
         return {}
+
+
+@st.cache_data(ttl=120)
+def cached_leaderboard():
+    if not HAS_SYNTHDATA:
+        return None
+    try:
+        return get_leaderboard()
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=120)
+def cached_validation_scores():
+    if not HAS_SYNTHDATA:
+        return None
+    try:
+        return get_validation_scores()
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=300)
+def cached_source_comparison():
+    if not HAS_PNL:
+        return None
+    try:
+        return get_source_comparison()
+    except Exception:
+        return None
 
 
 # =============================================================================
@@ -399,13 +440,13 @@ def render_live_edge_scanner():
     current_price = edges.get("current_price", 0)
     render_live_price_header(current_price, asset)
 
-    for hz in ("1h", "15min"):
+    for hz in ("1h", "15min", "5min"):
         hz_data = edges.get(hz, {})
         blended = hz_data.get("blended_signal")
         if not blended:
             continue
 
-        # Countdown timer
+        # Countdown timer (5min has no Kalshi market)
         snapshot = hz_data.get("market_snapshot")
         if snapshot:
             ttl = snapshot.get("time_to_settlement_min", 0)
@@ -540,7 +581,7 @@ def render_live_edge_scanner():
 
 
 def _render_edge_table(opportunities: list, polymarket_prob: float = 0.5):
-    """Render color-coded edge opportunities as an HTML table."""
+    """Render color-coded edge opportunities as an HTML table with spread indicator."""
     rows_html = ""
     for opp in opportunities:
         edge = opp.get("edge", 0)
@@ -567,6 +608,20 @@ def _render_edge_table(opportunities: list, polymarket_prob: float = 0.5):
         # EV color
         ev_color = GREEN if ev > 0 else RED
 
+        # Bid-ask spread
+        yes_ask = opp.get("yes_ask", 0)
+        yes_bid = opp.get("yes_bid", yes_ask - 0.02)  # estimate if not present
+        spread = abs(yes_ask - yes_bid) if yes_bid else 0.02
+        if spread < 0.05:
+            spread_color = GREEN
+            spread_label = f"{spread:.2f}"
+        elif spread < 0.10:
+            spread_color = ORANGE
+            spread_label = f"{spread:.2f}"
+        else:
+            spread_color = RED
+            spread_label = f"{spread:.2f}"
+
         rows_html += f"""
         <tr style="background: {row_bg};">
             <td style="padding: 6px 10px;">{opp.get('subtitle', '')}</td>
@@ -578,6 +633,7 @@ def _render_edge_table(opportunities: list, polymarket_prob: float = 0.5):
             <td style="padding: 6px 10px; color: {ev_color};">${ev:.4f}</td>
             <td style="padding: 6px 10px;">{opp.get('kelly_fraction', 0)*100:.1f}%</td>
             <td style="padding: 6px 10px;">{opp.get('contracts', 0)}</td>
+            <td style="padding: 6px 10px; color: {spread_color};">{spread_label}</td>
         </tr>
         """
 
@@ -595,6 +651,7 @@ def _render_edge_table(opportunities: list, polymarket_prob: float = 0.5):
                 <th style="padding: 8px 10px; text-align: left;">EV/$</th>
                 <th style="padding: 8px 10px; text-align: left;">Kelly %</th>
                 <th style="padding: 8px 10px; text-align: left;">Contracts</th>
+                <th style="padding: 8px 10px; text-align: left;">Spread</th>
             </tr>
         </thead>
         <tbody>
@@ -711,7 +768,7 @@ def render_price_distribution():
 
     asset = st.selectbox("Asset", ["BTC", "ETH"], key="dist_asset")
 
-    for hz in ("1h", "15min"):
+    for hz in ("1h", "15min", "5min"):
         st.subheader(f"{hz.upper()} Price Distribution")
 
         pct_data = None
@@ -970,6 +1027,85 @@ def render_pnl_tracker():
     else:
         st.info("No settled trades yet. Trades settle when their contract's settlement time passes.")
 
+    # Backtest Simulator (Phase 4)
+    st.divider()
+    st.subheader("Backtest Simulator")
+
+    if HAS_BACKTESTER:
+        bt_col1, bt_col2, bt_col3 = st.columns(3)
+        with bt_col1:
+            bt_min_edge = st.slider("Min Edge", 0.03, 0.15, 0.05, 0.01, key="bt_edge")
+        with bt_col2:
+            bt_agreement = st.selectbox("Agreement Filter",
+                                        ["ALL", "AGREE+", "STRONG_AGREE"],
+                                        key="bt_agreement")
+        with bt_col3:
+            bt_kelly = st.slider("Kelly Cap", 0.05, 0.50, 0.25, 0.05, key="bt_kelly")
+
+        if st.button("Run Backtest", type="primary", key="run_bt"):
+            bt_result = run_backtest(
+                min_edge=bt_min_edge,
+                agreement_filter=bt_agreement,
+                kelly_cap=bt_kelly,
+            )
+
+            if bt_result["n_trades"] > 0:
+                # Results metrics
+                r_col1, r_col2, r_col3, r_col4, r_col5 = st.columns(5)
+                r_col1.metric("Trades", bt_result["n_trades"])
+                r_col2.metric("Win Rate", f"{bt_result['win_rate']*100:.1f}%")
+                r_col3.metric("Total PnL", f"${bt_result['total_pnl']:.2f}")
+                r_col4.metric("Sharpe", f"{bt_result['sharpe']:.2f}")
+                r_col5.metric("Max Drawdown", f"{bt_result['max_drawdown']*100:.1f}%")
+
+                # Key insight card
+                st.markdown(f"""
+                <div style="text-align: center; padding: 12px; margin: 12px 0;
+                            background: {GREEN}11; border: 1px solid {GREEN}33; border-radius: 8px;">
+                    <span style="color: {GREEN}; font-weight: bold;">
+                        At edge>{bt_min_edge:.2f} + {bt_agreement} + kelly={bt_kelly:.0%},
+                        SynthEdge achieved {bt_result['win_rate']*100:.1f}% win rate
+                        on {bt_result['n_trades']} trades
+                        (Sharpe: {bt_result['sharpe']:.2f})
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Equity curve
+                equity = bt_result.get("equity_curve", [])
+                if len(equity) > 1:
+                    fig = go.Figure()
+                    final = equity[-1]
+                    line_color = GREEN if final >= equity[0] else RED
+                    fig.add_trace(go.Scatter(
+                        y=equity,
+                        mode="lines",
+                        name="Equity",
+                        line=dict(color=line_color, width=2),
+                        fill="tozeroy",
+                        fillcolor=f"rgba(38,166,154,0.1)" if final >= equity[0] else "rgba(239,83,80,0.1)",
+                    ))
+                    fig.add_hline(y=equity[0], line_dash="dash", line_color="gray",
+                                  annotation_text=f"Start: ${equity[0]:,.0f}")
+                    fig.update_layout(
+                        height=350,
+                        title="Backtest Equity Curve",
+                        yaxis_title="Bankroll ($)",
+                        margin=dict(l=50, r=50, t=50, b=50),
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                # Trade log
+                trade_log = bt_result.get("trade_log", [])
+                if trade_log:
+                    with st.expander("Trade Log", expanded=False):
+                        st.dataframe(pd.DataFrame(trade_log), use_container_width=True, hide_index=True)
+            else:
+                st.warning(f"No trades passed filters (filtered {bt_result['n_filtered']} signals). "
+                           "Try relaxing the min edge or agreement filter.")
+    else:
+        st.info("Backtester module not available.")
+
 
 # =============================================================================
 # Tab 5: Model Comparison
@@ -1120,6 +1256,96 @@ def render_model_comparison():
 
     st.divider()
 
+    # Source Performance Comparison (Phase 3 - Killer Chart)
+    st.subheader("Source Performance Comparison")
+
+    comparison = cached_source_comparison()
+    if comparison and comparison.get("blended", {}).get("n_trades", 0) > 0:
+        # 3-column comparison cards
+        col1, col2, col3 = st.columns(3)
+
+        synth_stats = comparison.get("synthdata", {})
+        ens_stats = comparison.get("ensemble", {})
+        blend_stats = comparison.get("blended", {})
+
+        with col1:
+            wr = synth_stats.get("win_rate", 0)
+            st.markdown(f"""
+            <div style="border: 2px solid {PURPLE}; border-radius: 10px; padding: 15px; text-align: center;">
+                <div style="font-size: 13px; color: #888;">SynthData Only</div>
+                <div style="font-size: 36px; font-weight: 800; color: {PURPLE};">{wr*100:.1f}%</div>
+                <div style="font-size: 12px; color: #888;">Win Rate | PnL: ${synth_stats.get('total_pnl', 0):.2f}</div>
+                <div style="font-size: 11px; color: #666;">Sharpe: {synth_stats.get('sharpe', 0):.2f} | n={synth_stats.get('n_trades', 0)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col2:
+            wr = ens_stats.get("win_rate", 0)
+            st.markdown(f"""
+            <div style="border: 2px solid {BLUE}; border-radius: 10px; padding: 15px; text-align: center;">
+                <div style="font-size: 13px; color: #888;">Ensemble Only</div>
+                <div style="font-size: 36px; font-weight: 800; color: {BLUE};">{wr*100:.1f}%</div>
+                <div style="font-size: 12px; color: #888;">Win Rate | PnL: ${ens_stats.get('total_pnl', 0):.2f}</div>
+                <div style="font-size: 11px; color: #666;">Sharpe: {ens_stats.get('sharpe', 0):.2f} | n={ens_stats.get('n_trades', 0)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col3:
+            wr = blend_stats.get("win_rate", 0)
+            st.markdown(f"""
+            <div style="border: 2px solid {GREEN}; border-radius: 10px; padding: 15px; text-align: center;">
+                <div style="font-size: 13px; color: #888;">BLENDED</div>
+                <div style="font-size: 36px; font-weight: 800; color: {GREEN};">{wr*100:.1f}%</div>
+                <div style="font-size: 12px; color: #888;">Win Rate | PnL: ${blend_stats.get('total_pnl', 0):.2f}</div>
+                <div style="font-size: 11px; color: #666;">Sharpe: {blend_stats.get('sharpe', 0):.2f} | n={blend_stats.get('n_trades', 0)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Alpha attribution
+        st.markdown(f"""
+        <div style="text-align: center; padding: 10px; margin-top: 12px;
+                    background: {GREEN}11; border: 1px solid {GREEN}33; border-radius: 8px;">
+            <span style="color: {GREEN}; font-weight: bold;">{comparison.get('alpha', '')}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Cumulative PnL overlay chart
+        cumulative = comparison.get("cumulative", {})
+        if any(cumulative.get(s) for s in ("synthdata", "ensemble", "blended")):
+            fig = go.Figure()
+
+            timestamps = cumulative.get("timestamps", [])
+
+            for source, color, name in [
+                ("synthdata", PURPLE, "SynthData Only"),
+                ("ensemble", BLUE, "Ensemble Only"),
+                ("blended", GREEN, "Blended"),
+            ]:
+                curve = cumulative.get(source, [])
+                if curve:
+                    x_axis = timestamps[:len(curve)] if timestamps else list(range(len(curve)))
+                    fig.add_trace(go.Scatter(
+                        x=x_axis,
+                        y=curve,
+                        mode="lines",
+                        name=name,
+                        line=dict(color=color, width=2),
+                    ))
+
+            fig.add_hline(y=0, line_dash="dash", line_color="gray")
+            fig.update_layout(
+                height=400,
+                title="Cumulative P&L by Source (Hypothetical)",
+                yaxis_title="Cumulative P&L ($)",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                margin=dict(l=50, r=50, t=60, b=50),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Source comparison requires settled trades. Record and settle some paper trades first.")
+
+    st.divider()
+
     # Architecture diagram
     st.subheader("SynthEdge Architecture")
     st.code("""
@@ -1135,7 +1361,180 @@ def render_model_comparison():
     Polymarket ──→ (via SynthData API response, cross-exchange reference)
     Auto-Recorder ──→ auto_recorder.py (background thread, 60s interval)
     P&L Tracker ──→ pnl_tracker.py (CSV-based signal log + settlement eval)
+    Leaderboard ──→ /v2/leaderboard/latest (Bittensor miner rankings)
+    Backtester ──→ backtester.py (parameter sweep + equity curves)
     """, language="text")
+
+
+# =============================================================================
+# Tab 6: Network Intelligence
+# =============================================================================
+
+def render_network_intelligence():
+    st.header("Network Intelligence (Bittensor Subnet 50)")
+    st.markdown("""
+    Deep view into the decentralized prediction network powering SynthData.
+    This data comes from 200+ competing ML models on Bittensor, scored by CRPS
+    (Continuous Ranked Probability Score).
+    """)
+
+    if not HAS_SYNTHDATA:
+        st.warning("SynthData client not available. Check SYNTHDATA_API_KEY.")
+        return
+
+    # Top Miners Leaderboard
+    st.subheader("Top Miners by CRPS Score")
+
+    leaderboard = cached_leaderboard()
+    if leaderboard and leaderboard.get("status") in ("ok", "stale"):
+        miners = leaderboard.get("miners", [])
+        if miners:
+            # Extract score field (try multiple keys)
+            miner_rows = []
+            for i, m in enumerate(miners[:10]):
+                score = 0
+                for key in ("crps_score", "score", "value", "incentive", "emission"):
+                    if key in m:
+                        try:
+                            score = float(m[key])
+                        except (ValueError, TypeError):
+                            pass
+                        break
+
+                uid = m.get("uid", m.get("miner_uid", i))
+                hotkey = str(m.get("hotkey", m.get("miner_hotkey", "")))[:12]
+
+                miner_rows.append({
+                    "Rank": i + 1,
+                    "UID": uid,
+                    "Hotkey": hotkey + "..." if hotkey else "N/A",
+                    "CRPS Score": f"{score:.4f}" if score else "N/A",
+                })
+
+            st.dataframe(pd.DataFrame(miner_rows), use_container_width=True, hide_index=True)
+
+            # Bar chart of miner scores
+            scores = []
+            labels = []
+            for row in miner_rows:
+                try:
+                    scores.append(float(row["CRPS Score"]))
+                    labels.append(f"UID {row['UID']}")
+                except ValueError:
+                    pass
+
+            if scores:
+                fig = go.Figure(go.Bar(
+                    x=labels,
+                    y=scores,
+                    marker_color=[PURPLE if i == 0 else BLUE for i in range(len(scores))],
+                    text=[f"{s:.4f}" for s in scores],
+                    textposition="auto",
+                ))
+                fig.update_layout(
+                    height=350,
+                    title="Top 10 Miners by CRPS Score",
+                    yaxis_title="CRPS Score (lower = better)",
+                    margin=dict(l=50, r=50, t=50, b=50),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Leaderboard data is empty. The API may be updating.")
+    else:
+        st.info("Leaderboard data not available. Check API connection.")
+
+    st.divider()
+
+    # Network Health + Consensus Strength
+    st.subheader("Network Health & Consensus")
+
+    validation = cached_validation_scores()
+    col1, col2, col3 = st.columns(3)
+
+    if validation and validation.get("status") in ("ok", "stale"):
+        avg_score = validation.get("avg_score", 0)
+        variance = validation.get("score_variance", 0)
+        n_validators = len(validation.get("scores", []))
+
+        # Network health gauge
+        with col1:
+            if avg_score > 0:
+                health_label = "HEALTHY" if avg_score < 0.5 else "MODERATE" if avg_score < 1.0 else "DEGRADED"
+                health_color = GREEN if health_label == "HEALTHY" else ORANGE if health_label == "MODERATE" else RED
+            else:
+                health_label = "NO DATA"
+                health_color = "#888"
+
+            st.markdown(f"""
+            <div style="border: 2px solid {health_color}; border-radius: 10px; padding: 18px; text-align: center;">
+                <div style="font-size: 12px; color: #888;">Network Health</div>
+                <div style="font-size: 28px; font-weight: 800; color: {health_color};">{health_label}</div>
+                <div style="font-size: 12px; color: #666;">Avg Score: {avg_score:.4f}</div>
+                <div style="font-size: 11px; color: #666;">{n_validators} validators</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Consensus strength (derived from score variance)
+        with col2:
+            if variance > 0:
+                std_dev = variance ** 0.5
+                if std_dev < 0.1:
+                    consensus = "HIGH CONSENSUS"
+                    cons_color = GREEN
+                elif std_dev < 0.3:
+                    consensus = "MODERATE"
+                    cons_color = ORANGE
+                else:
+                    consensus = "LOW CONSENSUS"
+                    cons_color = RED
+            else:
+                consensus = "NO DATA"
+                cons_color = "#888"
+                std_dev = 0
+
+            st.markdown(f"""
+            <div style="border: 2px solid {cons_color}; border-radius: 10px; padding: 18px; text-align: center;">
+                <div style="font-size: 12px; color: #888;">Consensus Strength</div>
+                <div style="font-size: 28px; font-weight: 800; color: {cons_color};">{consensus}</div>
+                <div style="font-size: 12px; color: #666;">Score Std Dev: {std_dev:.4f}</div>
+                <div style="font-size: 11px; color: #666;">Low variance = high agreement</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col3:
+            st.markdown(f"""
+            <div style="border: 2px solid {GOLD}; border-radius: 10px; padding: 18px; text-align: center;">
+                <div style="font-size: 12px; color: #888;">Prediction Quality</div>
+                <div style="font-size: 28px; font-weight: 800; color: {GOLD};">
+                    {'HIGH' if avg_score < 0.3 and variance < 0.05 else 'MEDIUM' if avg_score < 0.8 else 'LOW'}
+                </div>
+                <div style="font-size: 12px; color: #666;">Combined health + consensus</div>
+                <div style="font-size: 11px; color: #666;">Use for position sizing</div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        with col1:
+            st.info("Validation scores not available.")
+        with col2:
+            st.info("Consensus data requires validation scores.")
+        with col3:
+            st.info("Quality assessment pending data.")
+
+    st.divider()
+
+    # Why this matters
+    st.subheader("Why Network Intelligence Matters")
+    st.markdown("""
+    **For Trading Decisions:**
+    - **High consensus + healthy network** = Trust SynthData signals more, increase position sizes
+    - **Low consensus** = Models disagree, reduce exposure or sit out
+    - **Degraded health** = Network issues, fall back to local ensemble only
+
+    **Technical Depth:**
+    SynthEdge is the only hackathon entry that uses the Bittensor miner leaderboard
+    to dynamically assess prediction quality. This shows deep understanding of Subnet 50's
+    architecture and creates a meta-layer of intelligence above raw predictions.
+    """)
 
 
 # =============================================================================
@@ -1192,6 +1591,63 @@ def main():
 
             st.markdown("---")
 
+        # Volatility Regime Badge
+        st.markdown("---")
+        st.write("**Volatility Regime**")
+        if HAS_SYNTHDATA:
+            try:
+                vol_data = get_volatility_forecast("BTC", "1h")
+                if vol_data.get("status") in ("ok", "stale"):
+                    vol_ratio = vol_data.get("vol_ratio", 1.0)
+                    if vol_ratio > 1.3:
+                        vol_label, vol_color = "HIGH VOL", RED
+                    elif vol_ratio < 0.8:
+                        vol_label, vol_color = "LOW VOL", BLUE
+                    else:
+                        vol_label, vol_color = "NORMAL", GREEN
+                    st.markdown(f"""
+                    <div style="text-align: center; padding: 6px;
+                                background: {vol_color}22; border: 1px solid {vol_color};
+                                border-radius: 8px; font-weight: bold; color: {vol_color};">
+                        {vol_label} ({vol_ratio:.2f}x)
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("<span style='color:#888;'>Vol data unavailable</span>",
+                                unsafe_allow_html=True)
+            except Exception:
+                st.markdown("<span style='color:#888;'>Vol data error</span>",
+                            unsafe_allow_html=True)
+        else:
+            st.markdown("<span style='color:#888;'>SynthData not loaded</span>",
+                        unsafe_allow_html=True)
+
+        # Settlement Results Ticker
+        st.markdown("---")
+        st.write("**Recent Settlements**")
+        if HAS_PNL:
+            try:
+                settled = get_settled_history(5)
+                if not settled.empty and "pnl" in settled.columns:
+                    ticker_items = []
+                    for _, row in settled.tail(5).iterrows():
+                        sid = str(row.get("signal_id", "?"))
+                        pnl = float(row.get("pnl", 0))
+                        won = row.get("won", False)
+                        icon = "W" if won else "L"
+                        color = GREEN if won else RED
+                        ticker_items.append(
+                            f"<span style='color:{color};'>{sid}: {icon} "
+                            f"{'+'if pnl>=0 else ''}${pnl:.2f}</span>"
+                        )
+                    st.markdown(" | ".join(ticker_items), unsafe_allow_html=True)
+                else:
+                    st.markdown("<span style='color:#888;'>No settlements yet</span>",
+                                unsafe_allow_html=True)
+            except Exception:
+                pass
+
+        st.markdown("---")
         st.write(f"Updated: {datetime.now().strftime('%H:%M:%S')}")
 
         st.markdown("---")
@@ -1199,12 +1655,13 @@ def main():
         st.caption("Bittensor Subnet 50 | 200+ ML Models")
 
     # Main content with tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "⚡ Live Edge Scanner",
         "📊 Signal Breakdown",
         "📈 Price Distribution",
         "💰 P&L Tracker",
         "🔬 Model Comparison",
+        "🧠 Network Intelligence",
     ])
 
     with tab1:
@@ -1221,6 +1678,9 @@ def main():
 
     with tab5:
         render_model_comparison()
+
+    with tab6:
+        render_network_intelligence()
 
 
 if __name__ == "__main__":

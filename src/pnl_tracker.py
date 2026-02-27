@@ -378,6 +378,140 @@ def get_performance_summary() -> dict:
     return result
 
 
+def get_source_comparison() -> dict:
+    """
+    Compare hypothetical P&L across signal sources: SynthData-only, Ensemble-only, Blended.
+
+    For each settled signal, computes what would have happened if we had used
+    each source independently for the trading decision.
+
+    Returns:
+        {
+            "synthdata": {"win_rate": float, "total_pnl": float, "sharpe": float, "n_trades": int},
+            "ensemble": {"win_rate": float, "total_pnl": float, "sharpe": float, "n_trades": int},
+            "blended": {"win_rate": float, "total_pnl": float, "sharpe": float, "n_trades": int},
+            "cumulative": {
+                "synthdata": [float, ...],
+                "ensemble": [float, ...],
+                "blended": [float, ...],
+                "timestamps": [str, ...],
+            },
+            "alpha": str,  # description of blending advantage
+        }
+    """
+    empty_source = {"win_rate": 0.0, "total_pnl": 0.0, "sharpe": 0.0, "n_trades": 0}
+    result = {
+        "synthdata": dict(empty_source),
+        "ensemble": dict(empty_source),
+        "blended": dict(empty_source),
+        "cumulative": {"synthdata": [], "ensemble": [], "blended": [], "timestamps": []},
+        "alpha": "Insufficient data",
+    }
+
+    if not SETTLED_FILE.exists():
+        return result
+
+    try:
+        df = pd.read_csv(SETTLED_FILE)
+    except Exception:
+        return result
+
+    if df.empty or "settlement_price" not in df.columns:
+        return result
+
+    # Ensure numeric columns
+    for col in ("synthdata_prob_up", "ensemble_prob_up", "blended_prob_up",
+                "yes_ask", "settlement_price", "pnl"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.5 if "prob" in col else 0)
+
+    sources = {
+        "synthdata": "synthdata_prob_up",
+        "ensemble": "ensemble_prob_up",
+        "blended": "blended_prob_up",
+    }
+
+    for source_name, prob_col in sources.items():
+        if prob_col not in df.columns:
+            continue
+
+        pnl_list = []
+        wins = 0
+        total = 0
+
+        for _, row in df.iterrows():
+            prob_up = float(row.get(prob_col, 0.5))
+            yes_ask = float(row.get("yes_ask", 0))
+            settlement_price = float(row.get("settlement_price", 0))
+            contract_type = str(row.get("contract_type", ""))
+            strike = row.get("strike", "")
+
+            if yes_ask <= 0 or yes_ask >= 1:
+                pnl_list.append(0)
+                continue
+
+            total += 1
+
+            # Determine what this source would have done
+            source_direction = "UP" if prob_up > 0.5 else "DOWN"
+            source_side = row.get("side", "YES")  # Use same side logic
+
+            # Resolve contract outcome
+            resolved_yes = _resolve_contract(contract_type, strike, settlement_price)
+            if resolved_yes is None:
+                pnl_list.append(0)
+                continue
+
+            won = (resolved_yes and source_side == "YES") or (not resolved_yes and source_side == "NO")
+            if won:
+                wins += 1
+                trade_pnl = (1.0 - yes_ask) if source_side == "YES" else yes_ask
+            else:
+                trade_pnl = -yes_ask if source_side == "YES" else -(1.0 - yes_ask)
+
+            pnl_list.append(trade_pnl)
+
+        # Compute stats
+        if total > 0:
+            cumulative = []
+            running = 0
+            for p in pnl_list:
+                running += p
+                cumulative.append(running)
+
+            result["cumulative"][source_name] = cumulative
+            result[source_name]["win_rate"] = wins / total
+            result[source_name]["total_pnl"] = sum(pnl_list)
+            result[source_name]["n_trades"] = total
+
+            # Sharpe ratio (annualized approximation)
+            if len(pnl_list) > 1:
+                import numpy as np
+                pnl_arr = np.array(pnl_list)
+                mean_pnl = pnl_arr.mean()
+                std_pnl = pnl_arr.std()
+                result[source_name]["sharpe"] = (mean_pnl / std_pnl * (252 ** 0.5)) if std_pnl > 0 else 0
+
+    # Timestamps for cumulative chart
+    if "settled_at" in df.columns:
+        result["cumulative"]["timestamps"] = df["settled_at"].tolist()
+
+    # Compute alpha description
+    blended_wr = result["blended"]["win_rate"]
+    synth_wr = result["synthdata"]["win_rate"]
+    ens_wr = result["ensemble"]["win_rate"]
+    best_individual = max(synth_wr, ens_wr)
+    if blended_wr > best_individual and result["blended"]["n_trades"] > 0:
+        alpha_pp = (blended_wr - best_individual) * 100
+        result["alpha"] = f"Blending added {alpha_pp:+.1f}pp win rate over best individual source"
+    elif result["blended"]["n_trades"] > 0:
+        result["alpha"] = f"Best source outperforms blend by {(best_individual - blended_wr)*100:.1f}pp (needs more data)"
+    else:
+        result["alpha"] = "Insufficient data for comparison"
+
+    return result
+
+
 def get_signal_history(limit: int = 50) -> pd.DataFrame:
     """Get recent signal history for display."""
     if not SIGNALS_FILE.exists():

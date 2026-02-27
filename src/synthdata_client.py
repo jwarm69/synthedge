@@ -104,7 +104,10 @@ def get_directional_forecast(asset: str = "BTC", horizon: str = "1h") -> dict:
         }
     """
     # Map horizon to endpoint
-    if horizon in ("15min", "15m"):
+    if horizon in ("5min", "5m"):
+        endpoint = "/insights/polymarket/up-down/5min"
+        hz = "5min"
+    elif horizon in ("15min", "15m"):
         endpoint = "/insights/polymarket/up-down/15min"
         hz = "15min"
     else:
@@ -412,6 +415,185 @@ def get_volatility_forecast(asset: str = "BTC", horizon: str = "1h") -> dict:
     return result
 
 
+def get_leaderboard() -> dict:
+    """
+    Get the latest miner leaderboard from Bittensor Subnet 50.
+
+    Returns:
+        {
+            "status": "ok"|"unavailable",
+            "miners": [{"uid": int, "hotkey": str, "crps_score": float, ...}],
+            "top_count": int,
+            "timestamp": str,
+        }
+    """
+    cache_key = _cache_path("leaderboard", "global")
+
+    cached = _read_cache(cache_key)
+    if cached and cached.get("status") == "ok":
+        return cached
+
+    raw = _api_get("/v2/leaderboard/latest")
+
+    if raw is None:
+        if cache_key.exists():
+            try:
+                with open(cache_key) as f:
+                    stale = json.load(f)
+                stale["status"] = "stale"
+                return stale
+            except Exception:
+                pass
+        return {"status": "unavailable", "miners": [], "top_count": 0}
+
+    # Parse response — may be a list of miners or wrapped in a dict
+    miners = []
+    if isinstance(raw, list):
+        miners = raw
+    elif isinstance(raw, dict):
+        for key in ("miners", "data", "leaderboard", "results"):
+            if key in raw and isinstance(raw[key], list):
+                miners = raw[key]
+                break
+        if not miners and "uid" in raw:
+            miners = [raw]
+
+    result = {
+        "status": "ok",
+        "miners": miners[:50],  # cap at 50
+        "top_count": len(miners),
+        "timestamp": datetime.utcnow().isoformat(),
+        "source": "synthdata",
+        "raw": raw if isinstance(raw, dict) else {"data": raw},
+    }
+
+    _write_cache(cache_key, result)
+    return result
+
+
+def get_meta_leaderboard() -> dict:
+    """
+    Get meta-leaderboard (aggregated performance over rolling windows).
+
+    Returns:
+        {
+            "status": "ok"|"unavailable",
+            "rankings": [{"uid": int, "meta_score": float, ...}],
+            "timestamp": str,
+        }
+    """
+    cache_key = _cache_path("meta_leaderboard", "global")
+
+    cached = _read_cache(cache_key)
+    if cached and cached.get("status") == "ok":
+        return cached
+
+    raw = _api_get("/v2/meta-leaderboard/latest")
+
+    if raw is None:
+        if cache_key.exists():
+            try:
+                with open(cache_key) as f:
+                    stale = json.load(f)
+                stale["status"] = "stale"
+                return stale
+            except Exception:
+                pass
+        return {"status": "unavailable", "rankings": []}
+
+    rankings = []
+    if isinstance(raw, list):
+        rankings = raw
+    elif isinstance(raw, dict):
+        for key in ("rankings", "data", "leaderboard", "results", "miners"):
+            if key in raw and isinstance(raw[key], list):
+                rankings = raw[key]
+                break
+
+    result = {
+        "status": "ok",
+        "rankings": rankings[:50],
+        "timestamp": datetime.utcnow().isoformat(),
+        "source": "synthdata",
+        "raw": raw if isinstance(raw, dict) else {"data": raw},
+    }
+
+    _write_cache(cache_key, result)
+    return result
+
+
+def get_validation_scores() -> dict:
+    """
+    Get latest validation scores across miners.
+
+    Returns:
+        {
+            "status": "ok"|"unavailable",
+            "scores": [{"uid": int, "score": float, ...}],
+            "avg_score": float,
+            "score_variance": float,
+            "timestamp": str,
+        }
+    """
+    cache_key = _cache_path("validation_scores", "global")
+
+    cached = _read_cache(cache_key)
+    if cached and cached.get("status") == "ok":
+        return cached
+
+    raw = _api_get("/validation/scores/latest")
+
+    if raw is None:
+        if cache_key.exists():
+            try:
+                with open(cache_key) as f:
+                    stale = json.load(f)
+                stale["status"] = "stale"
+                return stale
+            except Exception:
+                pass
+        return {"status": "unavailable", "scores": [], "avg_score": 0, "score_variance": 0}
+
+    scores = []
+    if isinstance(raw, list):
+        scores = raw
+    elif isinstance(raw, dict):
+        for key in ("scores", "data", "results", "validations"):
+            if key in raw and isinstance(raw[key], list):
+                scores = raw[key]
+                break
+
+    # Compute aggregate stats
+    score_vals = []
+    for s in scores:
+        for key in ("score", "crps_score", "validation_score", "value"):
+            if key in s:
+                try:
+                    score_vals.append(float(s[key]))
+                except (ValueError, TypeError):
+                    pass
+                break
+
+    avg_score = sum(score_vals) / len(score_vals) if score_vals else 0
+    variance = (
+        sum((v - avg_score) ** 2 for v in score_vals) / len(score_vals)
+        if score_vals else 0
+    )
+
+    result = {
+        "status": "ok",
+        "scores": scores[:50],
+        "avg_score": avg_score,
+        "score_variance": variance,
+        "timestamp": datetime.utcnow().isoformat(),
+        "source": "synthdata",
+        "raw": raw if isinstance(raw, dict) else {"data": raw},
+    }
+
+    _write_cache(cache_key, result)
+    return result
+
+
 def get_all_signals(asset: str = "BTC") -> dict:
     """
     Fetch all SynthData signals for both horizons.
@@ -425,7 +607,7 @@ def get_all_signals(asset: str = "BTC") -> dict:
     ok_count = 0
     total = 0
 
-    for hz in ("1h", "15min"):
+    for hz in ("1h", "15min", "5min"):
         hz_data = {}
 
         directional = get_directional_forecast(asset, hz)
