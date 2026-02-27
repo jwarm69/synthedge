@@ -1,0 +1,102 @@
+{
+  "coin": "zec",
+  "version": "v2",
+  "trained_at": "2026-01-12T21:41:02.379110",
+  "features": [
+    "btc_return_4h",
+    "price_vs_sma20",
+    "return_kurt_24h",
+    "willr",
+    "fgi_change_7d",
+    "return_1h_lag12",
+    "rsi_14_lag12",
+    "bb_position_lag12",
+    "rsi_7",
+    "macd",
+    "stoch_d",
+    "return_1h_lag2",
+    "dmn",
+    "dow_sin",
+    "alt_vs_btc_24h",
+    "fgi_value",
+    "return_6h",
+    "return_skew_24h",
+    "ema_trend",
+    "macd_hist",
+    "adx",
+    "roc_12",
+    "return_12h",
+    "volume_trend",
+    "cci",
+    "rsi_21",
+    "dmp",
+    "rsi_14_lag2",
+    "macd_hist_lag6",
+    "dow_cos"
+  ],
+  "n_features": 30,
+  "include_fgi": true,
+  "include_cross_asset": true,
+  "include_onchain": false,
+  "include_lags": true,
+  "model_type": "ensemble_v2",
+  "models": [
+    "xgb",
+    "lgb",
+    "cat"
+  ],
+  "weights": {
+    "xgb": 0.3289185898658833,
+    "lgb": 0.3345270555751564,
+    "cat": 0.3365543545589603
+  },
+  "xgb_params": {
+    "n_estimators": 306,
+    "max_depth": 6,
+    "learning_rate": 0.09379844810859742,
+    "subsample": 0.90765912129132,
+    "colsample_bytree": 0.6565320365595202,
+    "min_child_weight": 5,
+    "reg_alpha": 0.004517239190504775,
+    "reg_lambda": 0.001456300778070225,
+    "gamma": 1.2019380335265308
+  },
+  "lgb_params": {
+    "n_estimators": 458,
+    "max_depth": 10,
+    "learning_rate": 0.0438005425099103,
+    "subsample": 0.6593939962095897,
+    "colsample_bytree": 0.63206467370425,
+    "min_child_samples": 12,
+    "reg_alpha": 0.12178313891509517,
+    "reg_lambda": 0.34883956468782507,
+    "num_leaves": 103
+  },
+  "cv_scores": {
+    "xgb": [
+      0.5133912874221418,
+      0.5121898750078513,
+      0.5237996467608218,
+      0.4928308661970947,
+      0.5550236631670565
+    ],
+    "lgb": [
+      0.5232036116134218,
+      0.5438979963570127,
+      0.519579004267783,
+      0.5034809848456314,
+      0.5513597921353169
+    ],
+    "cat": [
+      0.48927095891099065,
+      0.5681960932102255,
+      0.5307858628904016,
+      0.5239918013233392,
+      0.5452848059748296
+    ]
+  },
+  "test_accuracy": 0.5174041297935104,
+  "test_auc": 0.5269154023654787,
+  "n_trials": 50,
+  "n_cv_splits": 5
+}

@@ -1,0 +1,102 @@
+{
+  "coin": "btc",
+  "version": "v2",
+  "trained_at": "2026-01-12T21:35:50.358335",
+  "features": [
+    "macd_signal",
+    "rsi_14_lag6",
+    "return_skew_24h",
+    "obv_pct",
+    "ema_trend",
+    "return_1h_lag2",
+    "cmf",
+    "return_24h",
+    "rsi_14",
+    "atr_pct",
+    "return_1h",
+    "stoch_k",
+    "consecutive_up",
+    "sma_trend",
+    "volume_trend",
+    "hour_sin",
+    "return_4h",
+    "mfi",
+    "macd_hist_lag6",
+    "mvrv_overbought",
+    "bb_position_lag2",
+    "rsi_14_lag2",
+    "return_std_24h",
+    "rsi_change_6h",
+    "dmn",
+    "fgi_is_fear",
+    "macd_hist",
+    "bb_position_lag12",
+    "dow_sin",
+    "bb_width"
+  ],
+  "n_features": 30,
+  "include_fgi": true,
+  "include_cross_asset": false,
+  "include_onchain": true,
+  "include_lags": true,
+  "model_type": "ensemble_v2",
+  "models": [
+    "xgb",
+    "lgb",
+    "cat"
+  ],
+  "weights": {
+    "xgb": 0.336803202292995,
+    "lgb": 0.3364781101637731,
+    "cat": 0.32671868754323197
+  },
+  "xgb_params": {
+    "n_estimators": 116,
+    "max_depth": 10,
+    "learning_rate": 0.15767140566258625,
+    "subsample": 0.7727375823014725,
+    "colsample_bytree": 0.84638482360897,
+    "min_child_weight": 1,
+    "reg_alpha": 0.023916651253954316,
+    "reg_lambda": 0.7843776692335548,
+    "gamma": 2.584271492349697
+  },
+  "lgb_params": {
+    "n_estimators": 368,
+    "max_depth": 4,
+    "learning_rate": 0.2995545224723465,
+    "subsample": 0.9057077214772593,
+    "colsample_bytree": 0.6840880317373004,
+    "min_child_samples": 17,
+    "reg_alpha": 0.0038386282602742407,
+    "reg_lambda": 0.005770529906589101,
+    "num_leaves": 187
+  },
+  "cv_scores": {
+    "xgb": [
+      0.49184345970374094,
+      0.5201099646004369,
+      0.5066751460335406,
+      0.5373881056107268,
+      0.5395230759908277
+    ],
+    "lgb": [
+      0.4884383630429324,
+      0.5186255680249052,
+      0.526496451227938,
+      0.531732181642415,
+      0.5277418984471427
+    ],
+    "cat": [
+      0.5248854506653277,
+      0.5130881097637519,
+      0.48481408203002324,
+      0.5140927295325859,
+      0.48094408884041195
+    ]
+  },
+  "test_accuracy": 0.5303834808259587,
+  "test_auc": 0.5357276145383651,
+  "n_trials": 50,
+  "n_cv_splits": 5
+}

@@ -1,0 +1,14 @@
+{
+  "training": {
+    "coin": "all",
+    "trials": 200,
+    "cv_splits": 5,
+    "top_k": 35,
+    "feature_selection": true,
+    "use_lstm": true
+  },
+  "tracking": {
+    "provider": "none",
+    "project": "crypto-kalshi-predictor"
+  }
+}

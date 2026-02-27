@@ -1,0 +1,102 @@
+{
+  "coin": "eth",
+  "version": "v2",
+  "trained_at": "2026-01-12T21:37:26.475420",
+  "features": [
+    "btc_corr_24h",
+    "stoch_k",
+    "mfi",
+    "return_24h",
+    "volume_ratio_lag2",
+    "price_position_24h",
+    "rsi_14_lag6",
+    "btc_return_1h",
+    "price_vs_sma20",
+    "dow_cos",
+    "macd_hist_lag12",
+    "btc_volatility_24h",
+    "rsi_14_lag12",
+    "bb_position_lag2",
+    "roc_12",
+    "return_12h",
+    "alt_vs_btc_24h",
+    "hour_cos",
+    "dmn",
+    "price_vs_sma50",
+    "hl_range_vs_avg",
+    "ema_trend",
+    "return_std_24h",
+    "hour_sin",
+    "return_1h",
+    "btc_return_4h",
+    "rsi_change_12h",
+    "fgi_change_7d",
+    "macd",
+    "price_vs_ema12"
+  ],
+  "n_features": 30,
+  "include_fgi": true,
+  "include_cross_asset": true,
+  "include_onchain": false,
+  "include_lags": true,
+  "model_type": "ensemble_v2",
+  "models": [
+    "xgb",
+    "lgb",
+    "cat"
+  ],
+  "weights": {
+    "xgb": 0.33757385962617065,
+    "lgb": 0.34216472408935006,
+    "cat": 0.32026141628447924
+  },
+  "xgb_params": {
+    "n_estimators": 231,
+    "max_depth": 10,
+    "learning_rate": 0.10056914579820042,
+    "subsample": 0.6327450076716793,
+    "colsample_bytree": 0.9485426879303754,
+    "min_child_weight": 10,
+    "reg_alpha": 0.00011283166461189787,
+    "reg_lambda": 0.10348393451608155,
+    "gamma": 1.9634364763874503
+  },
+  "lgb_params": {
+    "n_estimators": 250,
+    "max_depth": 11,
+    "learning_rate": 0.16756290374033758,
+    "subsample": 0.8542656369998879,
+    "colsample_bytree": 0.7239330337333788,
+    "min_child_samples": 28,
+    "reg_alpha": 0.00028186421635744666,
+    "reg_lambda": 0.00890488246482857,
+    "num_leaves": 134
+  },
+  "cv_scores": {
+    "xgb": [
+      0.49574007220216604,
+      0.5387755102040817,
+      0.5217298424845594,
+      0.527078081683713,
+      0.5490905494351228
+    ],
+    "lgb": [
+      0.49520012556898446,
+      0.5443885412408415,
+      0.5341608077457134,
+      0.541806797965765,
+      0.5526575227083473
+    ],
+    "cat": [
+      0.4982875529744153,
+      0.5015062419420774,
+      0.4884737903605828,
+      0.5023683499185929,
+      0.506775015872712
+    ]
+  },
+  "test_accuracy": 0.5174041297935104,
+  "test_auc": 0.5364729576146543,
+  "n_trials": 50,
+  "n_cv_splits": 5
+}
